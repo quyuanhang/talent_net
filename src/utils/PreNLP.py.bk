@@ -1,0 +1,103 @@
+import jieba
+import requests
+from tqdm import tqdm
+import re
+
+
+exp_features_names = [
+    'expect_id',
+    'geek_id',
+    'position',  # l3_name
+    'city',
+    'gender',
+    'degree',
+    'fresh_graduate',
+    'apply_status',
+    'completion',
+    'cv'
+]
+job_features_names = [
+    'job_id',
+    'boss_id',
+    'position',
+    'city',
+    'degree',
+    'experience',
+    'area_business_name',
+    'boss_title',
+    'is_hr',
+    'stage',
+    'jd'
+]
+
+
+def get_structs(doc):
+    url = 'http://192.168.1.45:8078/api/jdstructure'
+    body = doc.encode('utf8')
+    result = requests.post(url, data=body)
+    try:
+        result = result.json()
+    except:
+        return []
+    keys = ['Softskill', 'Hardskill']
+    result = {k: result[k] for k in keys}
+    result = [x for l in result for x in l if l is not None]
+    return result
+
+
+def get_words(doc, position, top_n):
+    url = "http://192.168.1.45:8078/api/tagwordMatch"
+    body = {
+        'sentence': doc,
+        'positionCode': position,
+        'topN': top_n
+    }
+    result = requests.post(url, data=body)
+    result = result.json()
+    result = result['tagwords']
+    if result is not None:
+        result = [dic['word'] for dic in result]
+    else:
+        result = []
+    return result
+
+
+def nlp_features(fpin, fpout, n_col, top_n):
+    with open(fpin) as fin:
+        datain = fin.readlines()
+    dataout = []
+    for line in tqdm(datain):
+        data = line.strip().split('\001')
+        if len(data) != n_col:
+            continue
+        position = data[2]
+        doc = data[-1]
+        doc = doc.replace(' ', '')
+        doc = re.sub("[。]+", "。", doc)
+        words = jieba.cut(doc)
+        words = ' '.join(words)
+        skills = get_structs(doc)
+        skills = '\t'.join(skills)
+        keywords = get_words(doc, position, top_n)
+        keywords = ' '.join(keywords)
+        new_line = "{}\001{}\001{}\001{}\n".format(line, words, skills, keywords)
+        dataout.append(new_line)
+    with open(fpout, 'w') as fout:
+        fout.write('\n'.join(new_line))
+    return
+
+
+if __name__ == "__main__":
+    nlp_features(
+        fpin="../Data/multi_data5/multi_data5.profile.expect",
+        fpout="./data/multi_data5/multi_data5.profile.expect",
+        n_col=len(exp_features_names),
+        top_n=5,
+    )
+    nlp_features(
+        fpin="../Data/multi_data5/multi_data5.profile.job",
+        fpout="./data/multi_data5/multi_data5.profile.job",
+        n_col=len(job_features_names),
+        top_n=5,
+    )
+
