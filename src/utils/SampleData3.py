@@ -4,24 +4,22 @@ import pandas as pd
 import numpy as np
 
 
-def build_negative_sample(frame, n_neg=1):
-    frame['label'] = '1'
-    values = frame.values
-    n_sample = len(values)
-    negative_sample = list()
-    while len(negative_sample) < n_sample * n_neg:
-        idx_tmp = np.random.randint(n_sample, size=[int(n_sample * 1.1), 2])
-        sample_tmp = [
-            [values[j, 0], values[e, 1], '0']
-            for j, e in idx_tmp
-            if j != e
-        ]
-        negative_sample.extend(sample_tmp)
-    negative_sample = np.array(negative_sample[:int(n_sample * n_neg)])
-    sample = np.r_[values, negative_sample]
-    sample = np.random.permutation(sample)
-    sample = pd.DataFrame(sample)
-    return sample
+def binary(s):
+    if int(s) > 2:
+        return 1
+    return 0
+
+
+def calibration(frame, rate):
+    if len(frame[frame['label'] == 1]) < rate * len(frame[frame['label'] == 0]):
+        frame = pd.concat([
+            frame[frame['label'] == 1],
+            frame[frame['label'] == 0].sample(frac=rate)
+        ])
+        col = frame.columns
+        frame = pd.DataFrame(np.random.permutation(frame.values))
+        frame.columns = col
+    return frame
 
 
 if __name__ == '__main__':
@@ -37,7 +35,10 @@ if __name__ == '__main__':
         header=None,
         dtype=str,
     )
-    train_frame = build_negative_sample(train_frame)
+    train_frame.columns = ['eid', 'jid', 'label']
+    train_frame['label'] = train_frame['label'].map(binary)
+    train_frame = calibration(train_frame, 0.2)
+
     if args.rand_sample:
         train_frame, test_frame = train_frame.iloc[:-20000], train_frame.iloc[-20000:]
     else:
@@ -48,7 +49,9 @@ if __name__ == '__main__':
             dtype=str,
         )
         test_frame = test_frame.iloc[:20000]
-        test_frame = build_negative_sample(test_frame)
+        test_frame.columns = ['eid', 'jid', 'label']
+        test_frame['label'] = test_frame['label'].map(binary)
+        test_frame = calibration(test_frame, 0.2)
 
     train_frame.to_csv('{}.train'.format(args.dataout), sep='\001', header=None, index=False)
     test_frame.to_csv('{}.test'.format(args.dataout), sep='\001', header=None, index=False)

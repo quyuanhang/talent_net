@@ -37,8 +37,10 @@ def get_structs(doc):
     except:
         return []
     keys = ['Softskill', 'Hardskill']
-    result = {k: result[k] for k in keys}
-    result = [x for l in result for x in l if l is not None]
+    result = [result[k] for k in keys if result[k] != '']
+    result = '\n'.join(result)
+    result = result.replace("'", '')
+    result = result.split('\n')
     return result
 
 
@@ -85,9 +87,10 @@ def get_words(doc, position, top_n):
 
 
 def nlp_feature(line):
-    data = line.strip().split('\001')
+    line = line.strip()
+    data = line.split('\001')
     if len(data) != N_COL:
-        new_line = "{}\001{}\001{}\001{}\n".format(line, '', '', '')
+        new_line = "{}\001{}\001{}\001{}".format(line, '', '', '')
         return new_line
     position = data[2]
     doc = data[-1]
@@ -99,7 +102,7 @@ def nlp_feature(line):
     skills = '\t'.join(skills)
     keywords = get_words(doc, position, TOP_N)
     keywords = ' '.join(keywords)
-    new_line = "{}\001{}\001{}\001{}\n".format(line, words, skills, keywords)
+    new_line = "{}\001{}\001{}\001{}".format(line, words, skills, keywords)
     print_num()
     return new_line
 
@@ -111,6 +114,8 @@ def nlp_features(fpin, fpout):
     NUM = len(datain)
     global ST
     ST = time.time()
+    global ITEM
+    ITEM.value = 0
     with Pool() as pool:
         dataout = pool.map(nlp_feature, datain)
     with open(fpout, 'w') as fout:

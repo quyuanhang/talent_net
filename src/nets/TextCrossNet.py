@@ -18,9 +18,7 @@ class TextCrossNet:
             l2=0,
             mode='cross',
             top_k=3,
-            cate_emb='diag',
             dropout=0,
-            global_emb=0,
     ):
 
         self.doc_len = doc_len
@@ -49,78 +47,64 @@ class TextCrossNet:
             cv = tf.placeholder(dtype=tf.int32, shape=(None, doc_len), name='doc')
             cv_skill = tf.placeholder(dtype=tf.int32, shape=(None, n_skill, skill_len), name='skill')
             cv_kws = tf.placeholder(dtype=tf.int32, shape=(None, n_kws), name='keywords')
+
         cate_features = tf.placeholder(dtype=tf.int32, shape=(None, feature_len), name='cate_features')
+        cate_features = self.feature_emb(cate_features)
 
-        if mode == 'cate_only':
-            cate_features = self.feature_emb(cate_features)
-        else:
-            with tf.variable_scope('jd_cnn'):
-                jd = self.text_cnn(jd, global_emb=global_emb)
-            with tf.variable_scope('cv_cnn'):
-                cv = self.text_cnn(cv, global_emb=global_emb)
-            with tf.variable_scope('jd_cnn'):
-                jd1 = self.feature_emb(jd, mode='word', init=self.emb_init, flatten=False, name="jd_emb")
-                jd1 = self.sentence_cnn(jd1)
-            with tf.variable_scope('cv_cnn'):
-                cv1 = self.feature_emb(cv, mode='word', init=self.emb_init, flatten=False, name="cv_emb")
-                cv1 = self.sentence_cnn(cv1)
+        with tf.variable_scope('jd_cnn'):
+            jd = self.cnn(jd)
+        with tf.variable_scope('jd_skill'):
+            jd_skill = self.feature_emb(jd_skill, mode='word', init=self.emb_init, flatten=False, name="jd_emb")
+            jd_skill = self.sentence_cnn(jd_skill)
+            jd_skill = tf.reduce_mean(jd_skill)
+        with tf.variable_scope('cv_cnn'):
+            cv = self.cnn(cv)
+        with tf.variable_scope('cv_skill'):
+            cv_skill = self.feature_emb(cv_skill, mode='word', init=self.emb_init, flatten=False, name="cv_emb")
+            cv_skill = self.sentence_cnn(cv_skill)
+            cv_skill = tf.reduce_mean(cv_skill)
 
-            if mode == 'text_concat':
-                features = self.concat_reduce(jd1, cv1)
-            if mode == 'text_cross':
-                features = self.feature_emb(features)
-                features_ = self.matmul_flatten(jd1, cv1)
-                features = tf.concat([features, features_], axis=1)
-            if mode == 'cross':
-                features = self.cross(jd1, cv1, features, cate_emb)
-            if mode in ('concat', 'deep'):
-                features = self.concat(jd1, cv1, features)
-            if mode == 'wd':
-                with tf.variable_scope('deep'):
-                    deep_features = self.concat(jd1, cv1, features)
-                with tf.variable_scope('wide'):
-                    wide_features = self.cross(jd1, cv1, features)
-            # if mode == 'wd2':
-            #     with tf.variable_scope('wide'):
-            #         wide_features = self.cross(jd1, cv1, features)
-            #     with tf.variable_scope('deep'):
-            #         deep_features = tf.concat((jd2, cv2), axis=1)
-            #         features = self.feature_emb(features)
-            #         deep_features = tf.concat((deep_features, features), axis=1)
+        if mode == 'text_concat':
+            features = tf.concat([jd, cv])
+        if mode == "talent_concat":
+            features = tf.concat([jd_skill, cv_skill])
 
         with tf.variable_scope('classifier'):
-            if mode in ("wd", "wd2"):
-                self.predict = self.classifier2(wide_features, deep_features, dropout)
-            # elif mode == 'cross':
-            #     self.predict = tf.nn.sigmoid(
-            #         self.lr(features))
-            elif mode == 'deep':
-                self.predict = tf.nn.sigmoid(
-                    self.mlp(features, dropout))
-            else:
-                self.predict = self.classifier2(features, features, dropout)
+            self.predict = tf.nn.sigmoid(
+                self.mlp(features, dropout))
+
         with tf.variable_scope('loss'):
             self.label = tf.placeholder(dtype=tf.int32, shape=None, name='labels')
             self.loss = self.loss_function()
 
-    @staticmethod
-    def concat_reduce(jd, cv):
-        features = tf.concat([jd, cv], axis=2)
-        features = tf.concat(
-            (
-                tf.reduce_mean(features, axis=1),
-                tf.reduce_max(features, axis=1),
-            ),
-            axis=-1,
-        )
-        # features = tf.reduce_mean(features, axis=1)
-        return features
+    def attention(self, jd_skills, cv_skills):
+        """
+        :param cv_skills: 3d array, batch_size * doc_len * emb_dim
+        :param jd_skills: 3d array, batch_size * doc_len * emb_dim
+        :return:
+        """
 
-    @staticmethod
-    def matmul_flatten(jd, cv):
-        cross = tf.matmul(jd, cv, transpose_b=True)
-        cross = tf.layers.flatten(cross)
-        return cross
+        jd_query = tf.reduce_mean(jd_skills, axis=1, keepdims=True)
+        cv_weights = tf.matmul(jd_query, cv_skills, transpose_b=True)
+        cv_weights = tf.nn.softmax(cv_weights, axis=-1)
+        weighted_cv = tf.matmul(cv_weights, cv_skills)
+        weighted_cv = tf.squeeze(weighted_cv, axis=1)
+
+        cv_query = tf.reduce_mean(cv_skills, axis=1, keepdims=True)
+        jd_weights = tf.nn.softmax(
+            tf.matmul(cv_query, jd_skills, transpose_b=True),
+            axis=-1)
+        weighted_jd = tf.squeeze(
+            tf.matmul(jd_weights, jd_skills),
+            axis=1
+        )
+
+        features = tf.concat(
+            [jd_skills, weighted_jd, cv_skills, weighted_cv],
+            axis=1
+        )
+
+        return features
 
     def feature_emb(self, cate, mode='cate', init='RandomNormal', flatten=True, name=None):
         if mode == 'cate':
@@ -137,21 +121,7 @@ class TextCrossNet:
             cate = tf.layers.flatten(cate)
         return cate
 
-    def concat(self, jd, cv, cate):
-        features = self.concat_reduce(jd, cv)
-        cate = self.feature_emb(cate)
-        features = tf.concat([features, cate], axis=1)
-        return features
-
-    def text_cnn(self, x: tf.Tensor, global_emb=False):
-        if global_emb:
-            x = self.word_emb(x)
-        else:
-            x = keras.layers.Embedding(
-                    input_dim=self.n_word,
-                    output_dim=self.emb_dim,
-                    embeddings_initializer=self.emb_init,
-            )(x)
+    def cnn(self, x: tf.Tensor):
         x = tf.expand_dims(x, axis=-1)
         x = tf.layers.conv2d(
             inputs=x,
@@ -183,22 +153,6 @@ class TextCrossNet:
         x = tf.reduce_max(x, axis=-2)
         return x
 
-    def sentence_cnn2(self, x: tf.Tensor):
-        x = tf.transpose(x, perm=(0, 2, 3, 1))
-        x = tf.layers.conv2d(
-            inputs=x,
-            filters=self.emb_dim,
-            kernel_size=[self.block_len, self.emb_dim],
-            strides=[1, 1],
-            padding='valid',
-            activation=tf.nn.relu,
-            name='cnn2',
-        )
-        x = tf.concat(
-            (tf.reduce_max(x, axis=(1,2)), tf.reduce_mean(x, axis=(1,2))),
-            axis=-1)
-        return x
-
     def cross(self, jd: tf.Tensor, cv: tf.Tensor, cate: tf.Tensor, cate_emb='diag'):
         emb_dim = jd.shape.as_list()[-1]
         if cate_emb == "full":
@@ -221,79 +175,6 @@ class TextCrossNet:
         cross = tf.layers.flatten(cross)
         cross = tf.nn.softmax(cross)
         self.related_features = tf.nn.top_k(cross, k=self.top_k)
-        return cross
-
-    # def cross(self, jd: tf.Tensor, cv: tf.Tensor, cate: tf.Tensor, cate_emb='diag'):
-    #     emb_dim = jd.shape.as_list()[-1]
-    #     if cate_emb == "full":
-    #         cate_emb_dim = emb_dim ** 2
-    #     else:
-    #         cate_emb_dim = emb_dim
-    #     cate = keras.layers.Embedding(
-    #         input_dim=self.n_features,
-    #         output_dim=cate_emb_dim,
-    #         embeddings_initializer='RandomNormal',
-    #         name='cate_embedding'
-    #     )(cate)
-    #     if cate_emb == 'diag':
-    #         cate = tf.matrix_diag(cate)
-    #     else:
-    #         cate = tf.reshape(cate, shape=[-1, self.feature_len, emb_dim, emb_dim])
-    #
-    #     jd = tf.tile(
-    #         tf.expand_dims(jd, axis=1),
-    #         multiples=(1, self.feature_len, 1, 1),
-    #     )
-    #     cv = tf.tile(
-    #         tf.expand_dims(cv, axis=1),
-    #         multiples=(1, self.feature_len, 1, 1)
-    #     )
-    #     cross = tf.matmul(jd, cate)
-    #     cross = tf.matmul(cross, cv, transpose_b=True)
-    #     cross = tf.reduce_mean(cross, axis=1)
-    #     cross = tf.layers.flatten(cross)
-    #     cross = tf.nn.softmax(cross)
-    #     self.related_features = tf.nn.top_k(cross, k=self.top_k)
-    #     return cross
-
-    @staticmethod
-    def cross_with_feature(feature_mat, jd, cv):
-        cross = tf.matmul(jd, feature_mat)  # b d e
-        cross = tf.transpose(cross, perm=(0, 2, 1))  # b e d
-        cross = tf.expand_dims(cross, axis=-1)  # b e d 1
-        cv = tf.transpose(cv, perm=(0, 2, 1))  # b e d
-        cv = tf.expand_dims(cv, axis=-1)  # b e d 1
-        cross = tf.matmul(cross, cv, transpose_b=True)  # b e d d
-        cross_mean = tf.reduce_mean(cross, axis=(2, 3))  # b e
-        cross_max = tf.reduce_max(cross, axis=(2, 3))  # b e
-        cross = tf.concat((cross_max, cross_mean), axis=1)
-        return cross
-
-    def cross_to_emb(self, jd: tf.Tensor, cv: tf.Tensor, cate: tf.Tensor, cate_emb='diag'):
-        if cate_emb == 'diag':
-            emb_dim = self.emb_dim
-        else:
-            emb_dim = self.emb_dim ** 2
-        cate_flatten = self.feature_emb(cate)
-        cate = keras.layers.Embedding(
-            input_dim=self.n_features,
-            output_dim=emb_dim,
-            embeddings_initializer='RandomNormal',
-            name='cate_embedding'
-        )(cate)
-        if cate_emb == 'diag':
-            cate = tf.matrix_diag(cate)
-        else:
-            cate = tf.reshape(cate, shape=[-1, self.feature_len, self.emb_dim, self.emb_dim])
-        cate = tf.transpose(cate, perm=(1, 0, 2, 3))
-        cross = tf.map_fn(
-            lambda x: self.cross_with_feature(x, jd, cv),
-            cate,
-        )
-        cross = tf.transpose(cross, perm=(1, 0, 2))
-        cross = tf.layers.flatten(cross)
-        cross = tf.concat([cross, cate_flatten], axis=1)
-        cross = tf.nn.softmax(cross)
         return cross
 
     def get_related_features(self):

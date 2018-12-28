@@ -83,8 +83,6 @@ if __name__ == '__main__':
 
         model = TextCrossNet.TextCrossNet(
             doc_len=args.doc_len,
-            sent_len=args.sent_len,
-            block_len=args.block_len,
             feature_len=len(mix_data.feature_name),
             emb_dim=args.emb_dim,
             n_feature=len(mix_data.feature_name_sparse),
@@ -92,9 +90,7 @@ if __name__ == '__main__':
             emb_pretrain=mix_data.embs,
             l2=args.reg,
             mode=args.mode,
-            cate_emb=args.cate_emb,
             dropout=args.dropout,
-            global_emb=args.global_emb,
         )
         writer.add_graph(sess.graph)
 

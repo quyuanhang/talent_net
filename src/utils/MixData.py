@@ -149,7 +149,7 @@ class MixData:
             word_ids = self.doc1d(words, self.doc_len)
             # skills
             skills = features_dict['skills']
-            skills = self.skill(skills)
+            skills = self.doc2d(skills, shape=(10, 10))
             # keywords
             keywords = features_dict['keywords']
             keywords = self.doc1d(keywords, self.n_keywords)
@@ -206,11 +206,14 @@ class MixData:
             raw_docs = self.job_doc_raw[row]
         return [features, docs, kws, skills, raw_docs]
 
-    def data_generator(self, fp, batch_size):
+    def data_generator(self, fp, batch_size, n_his=0):
         with open(fp) as f:
             batch_data = []
             for line in f:
-                eid, jid, label = line.strip().split('\001')
+                if n_his:
+                    his_ids, eid, jid, label = line.strip().split('\001')
+                else:
+                    eid, jid, label = line.strip().split('\001')
                 label = int(label)
                 if jid not in self.job_to_row or eid not in self.exp_to_row:
                     print('loss id')
@@ -218,7 +221,13 @@ class MixData:
                 job_data, jd, jd_kws, jd_skill, jd_raw = self.feature_lookup(jid, 'job')
                 exp_data, cv, cv_kws, cv_skill, cv_raw = self.feature_lookup(eid, 'expect')
                 cate_features = sparse.hstack([job_data, exp_data])
-                batch_data.append([jd, jd_kws, jd_skill, cv, cv_kws, cv_skill, cate_features, label])
+                cate_features = cate_features.col
+                sample = [label, jd, jd_kws, jd_skill, cv, cv_kws, cv_skill, cate_features]
+                if n_his:
+                    for his_id in his_ids[:n_his]:
+                        his_data = self.feature_lookup(his_id, 'expect')
+                        sample.extend(his_data)
+                batch_data.append(his_data)
                 if len(batch_data) >= batch_size:
                     batch_data = list(zip(*batch_data))
                     yield [np.array(x) for x in batch_data]
@@ -227,12 +236,12 @@ class MixData:
 
 if __name__ == '__main__':
     mix_data = MixData(
-        fpin='../Data/multi_data4/multi_data4',
-        fpout='./data/multi_data4',
+        fpin='./data/multi_data5/multi_data5',
+        fpout='./data/multi_data5',
         wfreq=5,
         doc_len=50,
         emb_dim=64,
-        load_emb=1,
+        load_emb=0,
     )
     fp = './data/multi_data4.train'
     g = mix_data.data_generator(fp, 2)

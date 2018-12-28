@@ -1,6 +1,6 @@
 create temporary table nlp.expect_profile as
 select
-  a.expect_id, a.geek_id, a.l3_name, a.city, 
+  a.expect_id, a.geek_id, a.position_code, a.city, 
   a.gender, a.degree, a.fresh_graduate, a.apply_status, a.completion,
   b.cv
 from
@@ -8,13 +8,11 @@ from
 join
   nlp.geek_cv_raw b
 on
-  a.geek_id = b.geek_id
-where
-  a.l1_name = '技术';
+  a.geek_id = b.geek_id;
 
 create temporary table nlp.job_profile as
 select
-  a.job_id, a.boss_id, a.position, a.city, a.degree, a.experience, a.area_business_name,
+  a.job_id, a.boss_id, a.position_code, a.city, a.degree, a.experience, a.area_business_name,
   a.boss_title, a.is_hr, a.stage,
   b.jd
 from
@@ -24,8 +22,6 @@ join
 on
   a.job_id = b.job_id
 where
-  a.l1_code = 100000
-and
   a.is_hr = 0;
 
 create temporary table nlp.qyh_boss_add_friend as
@@ -38,7 +34,7 @@ create temporary table nlp.qyh_boss_add_friend as
   on
     a.actionp2 = b.job_id
   where
-    ds >= '2018-10-01' and ds < '2018-11-22'
+    ds >= '2018-11-01' and ds < '2018-11-22'
   and
     action = 'detail-geek-addfriend'
   and
@@ -54,13 +50,29 @@ create temporary table nlp.qyh_boss_interview_accept_tmp as
   from
     dw_bosszp.bg_action
   where
-    ds >= '2018-10-01' and ds < '2018-11-22'
+    ds >= '2018-11-01' and ds < '2018-11-22'
   and
     action = 'chat-interview-accept'
   and
     bg = 0
   group by
     uid, actionp2;
+
+create temporary table nlp.qyh_boss_interview_num as
+  select
+    job_id, count(geek_id) num
+  from
+    nlp.qyh_boss_interview_accept_tmp
+  group by
+    job_id;
+
+create temporary table nlp.qyh_boss_interview_num_filter as
+  select
+    job_id, num
+  from
+    nlp.qyh_boss_interview_num
+  where
+    num >= 4;
 
 create temporary table nlp.qyh_boss_interview_accept as
   select
@@ -71,6 +83,10 @@ create temporary table nlp.qyh_boss_interview_accept as
     nlp.qyh_boss_add_friend b
   on
     a.geek_id = b.geek_id and a.job_id = b.job_id
+  join
+    nlp.qyh_boss_interview_num_filter c
+  on
+    a.job_id = c.job_id
   distribute by rand()
   sort by rand()
   limit 100000;
@@ -92,7 +108,7 @@ create temporary table nlp.qyh_boss_view as
   on
     a.actionp3 = b.job_id    
   where
-    ds >= '2018-10-01' and ds < '2018-11-22'
+    ds >= '2018-11-01' and ds < '2018-11-22'
   and
     action = 'detail-geek'
   and
@@ -113,7 +129,7 @@ create temporary table nlp.qyh_boss_list as
   on
     a.jobid = b.job_id
   where
-    ds >= '2018-10-01' and ds < '2018-11-22'
+    ds >= '2018-11-01' and ds < '2018-11-22'
   and
     bg = 1
   and
@@ -153,23 +169,19 @@ create temporary table nlp.qyh_view_detail_add_interview_sample as
 
 create temporary table nlp.qyh_interview_sample_train as
   select
-    expect_id, job_id, action
+    expect_id, job_id, ds, action
   from 
     nlp.qyh_view_detail_add_interview_sample
   where
-    ds < '2018-11-15'
-  distribute by rand()
-  sort by rand();
+    ds < '2018-11-15';
 
 create temporary table nlp.qyh_interview_sample_test as
   select
-    expect_id, job_id, action
+    expect_id, job_id, ds, action
   from 
     nlp.qyh_view_detail_add_interview_sample
   where
-    ds >= '2018-11-15'
-  distribute by rand()
-  sort by rand();
+    ds >= '2018-11-15';
 
 -- create temporary table nlp.qyh_interview_sample_per_job as
 -- select
@@ -185,7 +197,7 @@ create temporary table nlp.qyh_interview_sample_test as
 
 insert overwrite local directory 'train'
   select
-    a.expect_id, a.job_id, action
+    a.expect_id, a.job_id, ds, action
   from
     nlp.qyh_interview_sample_train a
   join
@@ -199,7 +211,7 @@ insert overwrite local directory 'train'
 
 insert overwrite local directory 'test'
   select
-    a.expect_id, a.job_id, action
+    a.expect_id, a.job_id, ds, action
   from
     nlp.qyh_interview_sample_test a
   join
@@ -214,7 +226,7 @@ insert overwrite local directory 'test'
 insert overwrite local directory 'expect_profile'
   select
     distinct(a.expect_id), 
-    a.geek_id, a.l3_name, a.city, 
+    a.geek_id, a.position_code, a.city, 
     a.gender, a.degree, a.fresh_graduate, 
     a.apply_status, a.completion, a.cv
   from
@@ -227,7 +239,7 @@ insert overwrite local directory 'expect_profile'
 insert overwrite local directory 'job_profile'
   select
     distinct(a.job_id), 
-    a.boss_id, a.position, a.city, a.degree, 
+    a.boss_id, a.position_code, a.city, a.degree, 
     a.experience, a.area_business_name, 
     a.boss_title, a.is_hr, a.stage, a.jd
   from
