@@ -10,11 +10,13 @@ def binary(s):
     return 0
 
 
-def calibration(frame, rate):
-    if len(frame[frame['label'] == 1]) < rate * len(frame[frame['label'] == 0]):
+def calibration(frame: pd.DataFrame, rate):
+    posi_frame = frame[frame['label'] == 1]
+    nega_frame = frame[frame["label"] == 0]
+    if len(posi_frame) < rate * len(nega_frame):
         frame = pd.concat([
-            frame[frame['label'] == 1],
-            frame[frame['label'] == 0].sample(frac=rate)
+            posi_frame,
+            nega_frame.sample(n=int(len(posi_frame)/rate))
         ])
         col = frame.columns
         frame = pd.DataFrame(np.random.permutation(frame.values))
@@ -27,6 +29,7 @@ if __name__ == '__main__':
     parser.add_argument('--datain')
     parser.add_argument('--dataout')
     parser.add_argument('--rand_sample', type=int, default=1)
+    parser.add_argument("--calibration", type=float, default=0.5)
     args = parser.parse_args()
 
     train_frame = pd.read_csv(
@@ -37,7 +40,7 @@ if __name__ == '__main__':
     )
     train_frame.columns = ['eid', 'jid', 'label']
     train_frame['label'] = train_frame['label'].map(binary)
-    train_frame = calibration(train_frame, 0.2)
+    train_frame = calibration(train_frame, args.calibration)
 
     # train_frame = train_frame[train_frame['label'] != '0']
     # train_frame['label'] = train_frame['label'].map(lambda x: int(x=='2'))
@@ -54,7 +57,7 @@ if __name__ == '__main__':
         test_frame = test_frame.iloc[:20000]
         test_frame.columns = ['eid', 'jid', 'label']
         test_frame['label'] = test_frame['label'].map(binary)
-        test_frame = calibration(test_frame, 0.2)
+        test_frame = calibration(test_frame, args.calibration)
 
     train_frame.to_csv('{}.train'.format(args.dataout), sep='\001', header=None, index=False)
     test_frame.to_csv('{}.test'.format(args.dataout), sep='\001', header=None, index=False)

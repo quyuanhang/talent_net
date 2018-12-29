@@ -221,13 +221,13 @@ class MixData:
                 job_data, jd, jd_kws, jd_skill, jd_raw = self.feature_lookup(jid, 'job')
                 exp_data, cv, cv_kws, cv_skill, cv_raw = self.feature_lookup(eid, 'expect')
                 cate_features = sparse.hstack([job_data, exp_data])
-                cate_features = cate_features.col
-                sample = [label, jd, jd_kws, jd_skill, cv, cv_kws, cv_skill, cate_features]
+                cate_feature_ids = cate_features.col
+                sample = [label, jd, jd_kws, jd_skill, cv, cv_kws, cv_skill, cate_features, cate_feature_ids]
                 if n_his:
                     for his_id in his_ids[:n_his]:
                         his_data = self.feature_lookup(his_id, 'expect')
                         sample.extend(his_data)
-                batch_data.append(his_data)
+                batch_data.append(sample)
                 if len(batch_data) >= batch_size:
                     batch_data = list(zip(*batch_data))
                     yield [np.array(x) for x in batch_data]

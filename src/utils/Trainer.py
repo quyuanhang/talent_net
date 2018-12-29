@@ -6,21 +6,29 @@ from tqdm import tqdm
 from sklearn import metrics
 
 
-def feed_dict(data, training=True):
-    jds, cvs, cate_features, labels = data
+def feed_dict(data, model, training=True):
+    labels, jds, jd_kws, jd_skill, cvs, cv_kws, cv_skill, cate_features, cate_feature_ids = data
     fd = {
-        'jds:0': jds,
-        'cvs:0': cvs,
-        'cate_features:0': cate_features,
-        'loss/labels:0': labels,
-        'training:0': training,
+        "jds/doc:0": jds,
+        "jds/skill:0": jd_skill,
+        "jds/keywords:0": jd_kws,
+        "cvs/doc:0": cvs,
+        "cvs/skill:0": cv_skill,
+        "cvs/keywords:0": cv_kws,
+        "cate_features:0": cate_features,
+        "cate_feature_ids:0": cate_feature_ids,
+        "loss/labels:0": labels,
+        "training:0": training,
     }
+    fd = {k: fd[k] for k in model.palaceholder_names}
+    if "cate_features:0" in fd:
+        fd["cate_features:0"] = np.array([x.todense() for x in fd["cate_features:0"]]).squeeze(axis=1)
     return fd
 
 
 def train(
         sess: tf.Session,
-        model: TextCrossNet,
+        model,
         writer,
         train_data_fn,
         test_data_fn,
@@ -42,7 +50,7 @@ def train(
         epoch_metric_outside = []
         train_data = train_data_fn()
         for batch in tqdm(train_data, ncols=50):
-            fd = feed_dict(batch, training=True)
+            fd = feed_dict(batch, model, training=True)
             predict_data, loss_data, _ = sess.run(
                 [predict, loss, train_op],
                 feed_dict=fd)
@@ -53,7 +61,7 @@ def train(
         val_metric_outside = []
         test_data = test_data_fn()
         for batch in tqdm(test_data):
-            fd = feed_dict(batch, training=False)
+            fd = feed_dict(batch, model, training=False)
             predict_data, loss_data = sess.run(
                 [predict, loss],
                 feed_dict=fd)

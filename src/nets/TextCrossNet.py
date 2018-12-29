@@ -8,7 +8,7 @@ class TextCrossNet:
             doc_len,
             n_skill,
             skill_len,
-            n_kws,
+            n_keywords,
             feature_len,
             emb_dim,
             n_feature,
@@ -18,7 +18,7 @@ class TextCrossNet:
             l2=0,
             mode='cross',
             top_k=3,
-            dropout=0,
+            dropout=0.0,
     ):
 
         self.doc_len = doc_len
@@ -42,32 +42,65 @@ class TextCrossNet:
         with tf.variable_scope('jds'):
             jd = tf.placeholder(dtype=tf.int32, shape=(None, doc_len), name='doc')
             jd_skill = tf.placeholder(dtype=tf.int32, shape=(None, n_skill, skill_len), name='skill')
-            jd_kws = tf.placeholder(dtype=tf.int32, shape=(None, n_kws), name='keywords')
+            jd_keywords = tf.placeholder(dtype=tf.int32, shape=(None, n_keywords), name='keywords')
         with tf.variable_scope('cvs'):
             cv = tf.placeholder(dtype=tf.int32, shape=(None, doc_len), name='doc')
             cv_skill = tf.placeholder(dtype=tf.int32, shape=(None, n_skill, skill_len), name='skill')
-            cv_kws = tf.placeholder(dtype=tf.int32, shape=(None, n_kws), name='keywords')
+            cv_keywords = tf.placeholder(dtype=tf.int32, shape=(None, n_keywords), name='keywords')
 
-        cate_features = tf.placeholder(dtype=tf.int32, shape=(None, feature_len), name='cate_features')
+        cate_features = tf.placeholder(dtype=tf.int32, shape=(None, feature_len), name='cate_feature_ids')
         cate_features = self.feature_emb(cate_features)
 
         with tf.variable_scope('jd_cnn'):
+            jd = self.feature_emb(jd, mode='word', init=self.emb_init, flatten=False)
             jd = self.cnn(jd)
         with tf.variable_scope('jd_skill'):
-            jd_skill = self.feature_emb(jd_skill, mode='word', init=self.emb_init, flatten=False, name="jd_emb")
+            jd_skill = self.feature_emb(jd_skill, mode='word', init=self.emb_init, flatten=False)
             jd_skill = self.sentence_cnn(jd_skill)
-            jd_skill = tf.reduce_mean(jd_skill)
+        with tf.variable_scope("jd_keywords"):
+            jd_keywords = self.feature_emb(jd_keywords, mode="word", init=self.emb_init, flatten=False)
         with tf.variable_scope('cv_cnn'):
+            cv = self.feature_emb(cv, mode='word', init=self.emb_init, flatten=False)
             cv = self.cnn(cv)
         with tf.variable_scope('cv_skill'):
-            cv_skill = self.feature_emb(cv_skill, mode='word', init=self.emb_init, flatten=False, name="cv_emb")
+            cv_skill = self.feature_emb(cv_skill, mode='word', init=self.emb_init, flatten=False)
             cv_skill = self.sentence_cnn(cv_skill)
-            cv_skill = tf.reduce_mean(cv_skill)
+        with tf.variable_scope("cv_keywords"):
+            cv_keywords = self.feature_emb(cv_keywords, mode="word", init=self.emb_init, flatten=False)
 
-        if mode == 'text_concat':
-            features = tf.concat([jd, cv])
-        if mode == "talent_concat":
-            features = tf.concat([jd_skill, cv_skill])
+        if mode == "category":
+            features = cate_features
+        if "concat" in mode:
+            jd = tf.reduce_max(jd, axis=-2)
+            jd_skill = tf.reduce_mean(jd_skill, axis=-2)
+            jd_keywords = tf.reduce_mean(jd_keywords, axis=-2)
+            cv = tf.reduce_max(cv, axis=-2)
+            cv_skill = tf.reduce_mean(cv_skill, axis=-2)
+            cv_keywords = tf.reduce_mean(cv_keywords, axis=-2)
+            if mode == 'text_concat':
+                features = tf.concat([jd, cv, cate_features], axis=1)
+            if mode == "talent_concat":
+                features = tf.concat([jd_skill, cv_skill], axis=1)
+            if mode == "keywords_concat":
+                features = tf.concat([jd_keywords, cv_keywords], axis=1)
+            if mode == "all_concat":
+                features = tf.concat([jd, jd_skill, jd_keywords, cv, cv_skill, cv_keywords, cate_features], axis=1)
+        if mode == "attention":
+            jd = tf.reduce_max(jd, axis=-2)
+            jd_keywords = tf.reduce_mean(jd_keywords, axis=-2)
+            cv = tf.reduce_max(cv, axis=-2)
+            cv_keywords = tf.reduce_mean(cv_keywords, axis=-2)
+            skill_att = self.attention(jd_skill, cv_skill)
+            jd_skill = tf.reduce_mean(jd_skill, axis=-2)
+            cv_skill = tf.reduce_mean(cv_skill, axis=-2)
+            features = tf.concat(
+                [jd, jd_skill, jd_keywords, cv, cv_skill, cv_keywords, cate_features, skill_att],
+                axis=1)
+        # if mode == "explain":
+        #     jd = tf.reduce_max(jd, axis=-2)
+        #     jd_keywords = tf.reduce_mean(jd_keywords, axis=-2)
+        #     cv = tf.reduce_max(cv, axis=-2)
+        #     cv_keywords = tf.reduce_mean(cv_keywords, axis=-2)
 
         with tf.variable_scope('classifier'):
             self.predict = tf.nn.sigmoid(
@@ -76,6 +109,18 @@ class TextCrossNet:
         with tf.variable_scope('loss'):
             self.label = tf.placeholder(dtype=tf.int32, shape=None, name='labels')
             self.loss = self.loss_function()
+
+        self.palaceholder_names = [
+            "jds/doc:0",
+            "jds/skill:0",
+            "jds/keywords:0",
+            "cvs/doc:0",
+            "cvs/skill:0",
+            "cvs/keywords:0",
+            "cate_feature_ids:0",
+            "loss/labels:0",
+            "training:0",
+        ]
 
     def attention(self, jd_skills, cv_skills):
         """
@@ -100,7 +145,7 @@ class TextCrossNet:
         )
 
         features = tf.concat(
-            [jd_skills, weighted_jd, cv_skills, weighted_cv],
+            [weighted_jd, weighted_cv],
             axis=1
         )
 
@@ -126,8 +171,8 @@ class TextCrossNet:
         x = tf.layers.conv2d(
             inputs=x,
             filters=1,
-            kernel_size=[self.block_len, 1],
-            strides=[3, 1],
+            kernel_size=[self.conv_size, 1],
+            strides=[1, 1],
             padding='valid',
             activation=tf.nn.relu,
             name='cnn',
@@ -135,21 +180,15 @@ class TextCrossNet:
         x = tf.squeeze(x, axis=3)
         return x
 
+    @staticmethod
+    def reduce_max_mean(x, axis=None):
+        x = tf.concat(
+            (tf.reduce_max(x, axis=axis), tf.reduce_mean(x, axis=axis)),
+            axis=-1)
+        return x
+
     def sentence_cnn(self, x: tf.Tensor):
-        x = tf.reshape(x, shape=(-1, x.shape.as_list()[-2], x.shape.as_list()[-1], 1))
-        x = tf.layers.conv2d(
-            inputs=x,
-            filters=(self.emb_dim // 2),
-            kernel_size=[self.block_len, self.emb_dim],
-            strides=[1, 1],
-            padding='valid',
-            activation=tf.nn.relu,
-            name='cnn',
-        )
-        x = tf.reshape(x, shape=(-1, self.doc_len, x.shape.as_list()[-3], x.shape.as_list()[-1]))
-        # x = tf.concat(
-        #     (tf.reduce_max(x, axis=-2), tf.reduce_mean(x, axis=-2)),
-        #     axis=-1)
+        x = tf.map_fn(self.cnn, x)
         x = tf.reduce_max(x, axis=-2)
         return x
 
@@ -181,18 +220,18 @@ class TextCrossNet:
         return
 
     def mlp(self, features, dropout=0):
-        # features = tf.layers.batch_normalization(features)
-        # if dropout:
-        #     features = tf.layers.dropout(
-        #         inputs=features,
-        #         rate=dropout,
-        #         training=self.training,
-        #     )
-        # features = tf.layers.dense(
-        #     features,
-        #     units=self.emb_dim * 2,
-        #     activation=tf.nn.relu,
-        # )
+        features = tf.layers.batch_normalization(features)
+        if dropout:
+            features = tf.layers.dropout(
+                inputs=features,
+                rate=dropout,
+                training=self.training,
+            )
+        features = tf.layers.dense(
+            features,
+            units=self.emb_dim * 2,
+            activation=tf.nn.relu,
+        )
         features = tf.layers.batch_normalization(features)
         if dropout:
             features = tf.layers.dropout(
@@ -271,6 +310,6 @@ if __name__ == '__main__':
         shutil.rmtree(path)
     with tf.Session(graph=tf.Graph()) as sess:
         writer = tf.summary.FileWriter(path)
-        text_cross_net = TextCrossNet(50, 50, 5, 15, 128, 5000, 20000, mode='wd', dropout=0.3)
+        text_cross_net = TextCrossNet(500, 10, 10, 10, 12, 64, 2000, 5000, 3, mode="attention", dropout=0.3)
         writer.add_graph(sess.graph)
     writer.close()

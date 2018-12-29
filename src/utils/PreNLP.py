@@ -151,12 +151,12 @@ if __name__ == "__main__":
     ]
     N_COL = len(exp_features_names)
     nlp_features(
-        fpin="../Data/multi_data5/multi_data5.profile.expect",
-        fpout="./data/multi_data5/multi_data5.profile.expect",
+        fpin="../Data/multi_data6/multi_data6.profile.expect",
+        fpout="./data/multi_data6/multi_data6.profile.expect",
     )
     N_COL = len(job_features_names)
     nlp_features(
-        fpin="../Data/multi_data5/multi_data5.profile.job",
-        fpout="./data/multi_data5/multi_data5.profile.job",
+        fpin="../Data/multi_data6/multi_data6.profile.job",
+        fpout="./data/multi_data6/multi_data6.profile.job",
     )
 

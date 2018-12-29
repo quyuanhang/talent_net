@@ -1,6 +1,7 @@
 import tensorflow as tf
 from utils import MixData, Trainer, Visual
 from nets import TextCrossNet
+from nets import FM
 import argparse
 import os
 import shutil
@@ -70,11 +71,6 @@ if __name__ == '__main__':
         batch_size=args.batch_size
     )
 
-    # test_data_raw = lambda: mix_data.data_generator(
-    #     fp='{}.test'.format(args.dataout),
-    #     batch_size=args.batch_size,
-    # )
-
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
 
@@ -83,21 +79,10 @@ if __name__ == '__main__':
         if os.path.exists(board_dir):
             shutil.rmtree(board_dir)
         writer = tf.summary.FileWriter(board_dir)
-
-        model = TextCrossNet.TextCrossNet(
-            doc_len=args.doc_len,
-            n_skill=args.n_skill,
-            skill_len=args.skill_len,
-            n_keywords=args.n_keywords,
-            feature_len=len(mix_data.feature_name),
-            emb_dim=args.emb_dim,
+        model = FM.FM(
             n_feature=len(mix_data.feature_name_sparse),
-            n_word=len(mix_data.word_dict),
-            conv_size=args.conv_size,
-            emb_pretrain=mix_data.embs,
+            emb_dim=args.emb_dim,
             l2=args.reg,
-            mode=args.mode,
-            dropout=args.dropout,
         )
         writer.add_graph(sess.graph)
 
@@ -110,21 +95,6 @@ if __name__ == '__main__':
             lr=args.lr,
             n_epoch=args.n_epoch,
         )
-
-        # visual_str = Visual.visual(
-        #     sess=sess,
-        #     model=model,
-        #     test_data_fn=test_data,
-        #     raw_data_fn=test_data_raw,
-        # )
-        # with open('./data/visual.html', 'w') as f:
-        #     f.write(visual_str)
-
-        # constant_graph = tf.graph_util.convert_variables_to_constants(
-        #     sess, sess.graph_def, ['classifier/output/Sigmoid'])
-
-        # with tf.gfile.FastGFile('./data/' + 'model.pb', mode='wb') as f:
-        #     f.write(constant_graph.SerializeToString())
 
     writer.close()
 
