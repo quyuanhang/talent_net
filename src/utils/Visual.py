@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from tqdm import tqdm
 from nets.TextCrossNet import TextCrossNet
-from utils.Trainer import feed_dict
+from utils.TrainerWithHis import feed_dict
 
 
 def feature_fold(idx, doc_len, block_len):

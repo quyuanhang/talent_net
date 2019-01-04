@@ -62,12 +62,12 @@ if __name__ == '__main__':
 
     train_data = lambda: mix_data.data_generator(
         fp='{}.train'.format(args.dataout),
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
     )
 
     test_data = lambda: mix_data.data_generator(
         fp='{}.test'.format(args.dataout),
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
     )
 
     # test_data_raw = lambda: mix_data.data_generator(

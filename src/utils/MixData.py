@@ -189,7 +189,7 @@ class MixData:
             sent += [0] * (sent_len - len(sent))
         return sent
 
-    def feature_lookup(self, idstr, idtype):
+    def feature_lookup(self, idstr, idtype="pad"):
         if idtype == 'expect':
             row = self.exp_to_row[idstr]
             features = self.exp_features[row]
@@ -197,13 +197,19 @@ class MixData:
             kws = self.exp_kws[row]
             skills = self.exp_skills[row]
             raw_docs = self.exp_doc_raw[row]
-        else:
+        elif idtype == "job":
             row = self.job_to_row[idstr]
             features = self.job_features[row]
             docs = self.job_docs[row]
             kws = self.job_kws[row]
             skills = self.job_skills[row]
             raw_docs = self.job_doc_raw[row]
+        else:
+            features = np.zeros_like(self.job_features[0])
+            docs = np.zeros_like(self.job_docs[0])
+            kws = np.zeros_like(self.job_kws[0])
+            skills = np.zeros_like(self.job_skills[0])
+            raw_docs = np.zeros_like(self.job_doc_raw[0])
         return [features, docs, kws, skills, raw_docs]
 
     def data_generator(self, fp, batch_size, n_his=0):
@@ -211,7 +217,7 @@ class MixData:
             batch_data = []
             for line in f:
                 if n_his:
-                    his_ids, eid, jid, label = line.strip().split('\001')
+                    *his_ids, eid, jid, label = line.strip().split('\001')
                 else:
                     eid, jid, label = line.strip().split('\001')
                 label = int(label)
@@ -224,9 +230,14 @@ class MixData:
                 cate_feature_ids = cate_features.col
                 sample = [label, jd, jd_kws, jd_skill, cv, cv_kws, cv_skill, cate_features, cate_feature_ids]
                 if n_his:
+                    his_data = []
                     for his_id in his_ids[:n_his]:
-                        his_data = self.feature_lookup(his_id, 'expect')
-                        sample.extend(his_data)
+                        if his_id in self.exp_to_row:
+                            exp_data, cv, cv_kws, cv_skill, cv_raw = self.feature_lookup(his_id, "expect")
+                        else:
+                            exp_data, cv, cv_kws, cv_skill, cv_raw = self.feature_lookup(his_id)
+                        his_data.append([cv, cv_kws, cv_skill])
+                    sample.extend(list(zip(*his_data)))
                 batch_data.append(sample)
                 if len(batch_data) >= batch_size:
                     batch_data = list(zip(*batch_data))
@@ -236,13 +247,17 @@ class MixData:
 
 if __name__ == '__main__':
     mix_data = MixData(
-        fpin='./data/multi_data5/multi_data5',
-        fpout='./data/multi_data5',
+        fpin='./data/multi_data6/multi_data6',
+        fpout='./data/multi_data6/multi_data6',
         wfreq=5,
         doc_len=50,
         emb_dim=64,
         load_emb=0,
     )
-    fp = './data/multi_data4.train'
-    g = mix_data.data_generator(fp, 2)
+    fp = './data/multi_data6/multi_data6.train'
+    g = mix_data.data_generator(fp, 2, n_his=3)
+    n = next(g)
+    n = next(g)
+    n = next(g)
+    n = next(g)
     print("done")

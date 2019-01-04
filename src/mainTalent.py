@@ -1,11 +1,9 @@
 import tensorflow as tf
-from utils import MixData, Trainer, Visual
-from nets import TextCrossNet
-from nets import FM
+from utils import MixData, TrainerWithHis, Visual
+from nets import TalentNet
 import argparse
 import os
 import shutil
-import numpy as np
 import pickle
 
 def parse_args():
@@ -20,6 +18,7 @@ def parse_args():
     # parser.add_argument('--pad_zero', type=int, default=1)
     parser.add_argument('--load_emb', type=int, default=0)
     # model arguments
+    parser.add_argument('--nhis', type=int, default=3)
     parser.add_argument('--doc_len', type=int, default=200)
     parser.add_argument('--n_skill', type=int, default=10)
     parser.add_argument('--n_keywords', type=int, default=10)
@@ -63,13 +62,20 @@ if __name__ == '__main__':
 
     train_data = lambda: mix_data.data_generator(
         fp='{}.train'.format(args.dataout),
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        n_his=args.nhis,
     )
 
     test_data = lambda: mix_data.data_generator(
         fp='{}.test'.format(args.dataout),
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        n_his=args.nhis,
     )
+
+    # test_data_raw = lambda: mix_data.data_generator(
+    #     fp='{}.test'.format(args.dataout),
+    #     batch_size=args.batch_size,
+    # )
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
@@ -79,14 +85,25 @@ if __name__ == '__main__':
         if os.path.exists(board_dir):
             shutil.rmtree(board_dir)
         writer = tf.summary.FileWriter(board_dir)
-        model = FM.FM(
-            n_feature=len(mix_data.feature_name_sparse),
+
+        model = TalentNet.TalentNet(
+            doc_len=args.doc_len,
+            n_skill=args.n_skill,
+            skill_len=args.skill_len,
+            n_keywords=args.n_keywords,
+            feature_len=len(mix_data.feature_name),
             emb_dim=args.emb_dim,
+            n_feature=len(mix_data.feature_name_sparse),
+            n_word=len(mix_data.word_dict),
+            conv_size=args.conv_size,
+            emb_pretrain=mix_data.embs,
             l2=args.reg,
+            mode=args.mode,
+            dropout=args.dropout,
         )
         writer.add_graph(sess.graph)
 
-        Trainer.train(
+        TrainerWithHis.train(
             sess=sess,
             model=model,
             writer=writer,
@@ -95,6 +112,21 @@ if __name__ == '__main__':
             lr=args.lr,
             n_epoch=args.n_epoch,
         )
+
+        # visual_str = Visual.visual(
+        #     sess=sess,
+        #     model=model,
+        #     test_data_fn=test_data,
+        #     raw_data_fn=test_data_raw,
+        # )
+        # with open('./data/visual.html', 'w') as f:
+        #     f.write(visual_str)
+
+        # constant_graph = tf.graph_util.convert_variables_to_constants(
+        #     sess, sess.graph_def, ['classifier/output/Sigmoid'])
+
+        # with tf.gfile.FastGFile('./data/' + 'model.pb', mode='wb') as f:
+        #     f.write(constant_graph.SerializeToString())
 
     writer.close()
 

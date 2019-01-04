@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 
-class TextCrossNet:
+class TalentNet:
     def __init__(
             self,
             doc_len,
@@ -14,6 +14,7 @@ class TextCrossNet:
             n_feature,
             n_word,
             conv_size,
+            n_his=3,
             emb_pretrain=[],
             l2=0,
             mode='cross',
@@ -39,6 +40,13 @@ class TextCrossNet:
         else:
             self.emb_init = 'RandomNormal'
 
+        cate_features = tf.placeholder(dtype=tf.int32, shape=(None, feature_len), name='cate_feature_ids')
+        cate_features = self.feature_emb(cate_features)
+
+        with tf.variable_scope("history"):
+            his_cv = tf.placeholder(dtype=tf.int32, shape=(None, n_his, doc_len), name='doc')
+            his_cv_skill = tf.placeholder(dtype=tf.int32, shape=(None, n_his, n_skill, skill_len), name='skill')
+            his_cv_keywords = tf.placeholder(dtype=tf.int32, shape=(None, n_his, n_keywords), name='keywords')
         with tf.variable_scope('jds'):
             jd = tf.placeholder(dtype=tf.int32, shape=(None, doc_len), name='doc')
             jd_skill = tf.placeholder(dtype=tf.int32, shape=(None, n_skill, skill_len), name='skill')
@@ -48,9 +56,14 @@ class TextCrossNet:
             cv_skill = tf.placeholder(dtype=tf.int32, shape=(None, n_skill, skill_len), name='skill')
             cv_keywords = tf.placeholder(dtype=tf.int32, shape=(None, n_keywords), name='keywords')
 
-        cate_features = tf.placeholder(dtype=tf.int32, shape=(None, feature_len), name='cate_feature_ids')
-        cate_features = self.feature_emb(cate_features)
-
+        with tf.variable_scope('his_skill'):
+            his_cv_skill = self.feature_emb(his_cv_skill, mode='word', init=self.emb_init, flatten=False)
+            his_cv_skill = tf.map_fn(
+                self.sentence_cnn,
+                his_cv_skill,
+            )
+            his_cv_skill = tf.reduce_max(his_cv_skill, axis=-2)
+            his_cv_skill = tf.reduce_mean(his_cv_skill, axis=-2)
         with tf.variable_scope('jd_cnn'):
             jd = self.feature_emb(jd, mode='word', init=self.emb_init, flatten=False)
             jd = self.cnn(jd)
@@ -80,11 +93,13 @@ class TextCrossNet:
             if mode == 'text_concat':
                 features = tf.concat([jd, cv, cate_features], axis=1)
             if mode == "talent_concat":
-                features = tf.concat([jd_skill, cv_skill, cate_features], axis=1)
+                features = tf.concat([jd_skill, cv_skill], axis=1)
             if mode == "keywords_concat":
-                features = tf.concat([jd_keywords, cv_keywords, cate_features], axis=1)
+                features = tf.concat([jd_keywords, cv_keywords], axis=1)
             if mode == "all_concat":
-                features = tf.concat([jd, jd_skill, jd_keywords, cv, cv_skill, cv_keywords, cate_features], axis=1)
+                features = tf.concat(
+                    [jd, jd_skill, jd_keywords, cv, cv_skill, cv_keywords, cate_features, his_cv_skill],
+                    axis=1)
         if mode == "attention":
             jd = tf.reduce_max(jd, axis=-2)
             jd_keywords = tf.reduce_mean(jd_keywords, axis=-2)
@@ -111,6 +126,9 @@ class TextCrossNet:
             self.loss = self.loss_function()
 
         self.palaceholder_names = [
+            "history/doc:0",
+            "history/skill:0",
+            "history/keywords:0",
             "jds/doc:0",
             "jds/skill:0",
             "jds/keywords:0",
@@ -310,6 +328,6 @@ if __name__ == '__main__':
         shutil.rmtree(path)
     with tf.Session(graph=tf.Graph()) as sess:
         writer = tf.summary.FileWriter(path)
-        text_cross_net = TextCrossNet(500, 10, 10, 10, 12, 64, 2000, 5000, 3, mode="attention", dropout=0.3)
+        text_cross_net = TalentNet(500, 10, 10, 10, 12, 64, 2000, 5000, 3, mode="all_concat", dropout=0.3)
         writer.add_graph(sess.graph)
     writer.close()
