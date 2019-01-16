@@ -26,7 +26,6 @@ def his_sample(frame: pd.DataFrame, posi_label=1):
     his_posi = frame[frame["label"] == posi_label]
     his_posi = his_posi.sort_values(by=["jid", "ds"])
     his_posi.index = his_posi["jid"]
-    hi
     return his_posi
 
 

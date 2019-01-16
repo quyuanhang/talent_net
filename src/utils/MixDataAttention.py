@@ -1,5 +1,4 @@
 import re
-import requests
 import collections
 import numpy as np
 from tqdm import tqdm
@@ -214,36 +213,30 @@ class MixData:
             raw_docs = np.zeros_like(self.job_doc_raw[0])
         return [features, docs, kws, skills, raw_docs]
 
-    def data_generator(self, fp, batch_size, n_his=0):
+    def data_generator(self, fp, batch_size, raw=False):
         with open(fp) as f:
             batch_data = []
             for line in f:
-                if n_his:
-                    *his_ids, eid, jid, label = line.strip().split('\001')
-                else:
-                    eid, jid, label = line.strip().split('\001')
+                eid, jid, label = line.strip().split('\001')
                 label = int(label)
                 if jid not in self.job_to_row or eid not in self.exp_to_row:
                     print('loss id')
                     continue
                 job_data, jd, jd_kws, jd_skill, jd_raw = self.feature_lookup(jid, 'job')
                 exp_data, cv, cv_kws, cv_skill, cv_raw = self.feature_lookup(eid, 'expect')
-                cate_features = sparse.hstack([job_data, exp_data])
-                cate_feature_ids = cate_features.col
-                sample = [label, jd, jd_kws, jd_skill, cv, cv_kws, cv_skill, cate_features, cate_feature_ids]
-                if n_his:
-                    his_data = []
-                    for his_id in his_ids[:n_his]:
-                        if his_id in self.exp_to_row:
-                            exp_data, cv, cv_kws, cv_skill, cv_raw = self.feature_lookup(his_id, "expect")
-                        else:
-                            exp_data, cv, cv_kws, cv_skill, cv_raw = self.feature_lookup(his_id)
-                        his_data.append([cv, cv_kws, cv_skill])
-                    sample.extend(list(zip(*his_data)))
+                if raw:
+                    sample = [jid, eid, jd_raw, cv_raw, label]
+                else:
+                    cate_features = sparse.hstack([job_data, exp_data])
+                    cate_feature_ids = cate_features.col
+                    sample = [label, jd, jd_kws, jd_skill, cv, cv_kws, cv_skill, cate_features, cate_feature_ids]
                 batch_data.append(sample)
                 if len(batch_data) >= batch_size:
-                    batch_data = list(zip(*batch_data))
-                    yield [np.array(x) for x in batch_data]
+                    if raw:
+                        yield batch_data
+                    else:
+                        batch_data = list(zip(*batch_data))
+                        yield [np.array(x) for x in batch_data]
                     batch_data = []
 
 
@@ -257,7 +250,7 @@ if __name__ == '__main__':
         load_emb=0,
     )
     fp = './data/multi_data6/multi_data6.train'
-    g = mix_data.data_generator(fp, 2, n_his=3)
+    g = mix_data.data_generator(fp, 2)
     n = next(g)
     n = next(g)
     n = next(g)

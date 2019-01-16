@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
 from tqdm import tqdm
-from nets.TextCrossNet import TextCrossNet
 from utils.TrainerWithHis import feed_dict
 
 
@@ -116,7 +115,7 @@ def feature_lookup(predictions, idxs, weights, datas):
 
 def visual(
         sess: tf.Session,
-        model: TextCrossNet,
+        model,
         test_data_fn,
         raw_data_fn,
         data_len=1000000,

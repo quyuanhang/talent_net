@@ -1,6 +1,5 @@
 import numpy as np
 import tensorflow as tf
-from nets.TextCrossNet import TextCrossNet
 from utils.MixData import MixData
 from tqdm import tqdm
 from sklearn import metrics

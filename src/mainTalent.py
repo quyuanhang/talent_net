@@ -1,6 +1,6 @@
 import tensorflow as tf
 from utils import MixData, TrainerWithHis, Visual
-from nets import TalentNet
+from nets import PJFNN
 import argparse
 import os
 import shutil
@@ -86,7 +86,7 @@ if __name__ == '__main__':
             shutil.rmtree(board_dir)
         writer = tf.summary.FileWriter(board_dir)
 
-        model = TalentNet.TalentNet(
+        model = PJFNN.Model(
             doc_len=args.doc_len,
             n_skill=args.n_skill,
             skill_len=args.skill_len,
